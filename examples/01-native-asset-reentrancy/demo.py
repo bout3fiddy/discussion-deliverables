@@ -1,4 +1,5 @@
-"""Run from this directory:  uv run --with titanoboa demo.py
+"""Run from this directory (the keyed @nonreentrant decorator needs Vyper 0.3.x):
+  uv run --python 3.11 --with 'vyper==0.3.10' --with 'titanoboa<0.2' demo.py
 
 One pool (pool.vy) deployed three ways, isolating one variable each time:
   - native asset, interaction before effect -> drained,

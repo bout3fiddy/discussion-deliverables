@@ -128,14 +128,9 @@ Based on this core premise, here are the lessons learnt:
 
 ## Numbers: Deposited funds post-hack and post security-first refactor
 
-A consequence of the exploit was an exodus of billions of dollars of liquidity from the exchange. A consequence of pursuing security resulted in the following liquidity staying. These are numbers fetched live from the public blockchain, from contracts that were deployed post-hack, using [`code/liquidity/fetch-total-value.sh`](./code/liquidity/fetch-total-value.sh):
+A consequence of the exploit was an exodus of billions of dollars of liquidity from the exchange. A consequence of pursuing security resulted in the following liquidity staying. These are numbers fetched live from the public blockchain, from contracts that were deployed post-hack, using [`code/liquidity/fetch_total_value.py`](./code/liquidity/fetch_total_value.py):
 
-| Contract Type | Total Value (USD) | # Active Liquidity Pools |
-|---|---:|---:|
-| Stablecoins | $793.7M | 987 |
-| 2-asset Volatile Markets | $277.6M | 361 |
-| 3-asset Volatile markets | $30.2M | 131 |
-| Grand total | ≈ $1.10 B | 1,479 |
+≈ $1.11 B across 1,481 active liquidity pools.
 
 The most consequential read of the efficacy of post-hack refactoring endeavours was a direct quote from a major asset manager stating verbatim that the smart contracts were "rock solid infra" and they felt "comfortable holding 8-9 figures in curve smart contracts".
 

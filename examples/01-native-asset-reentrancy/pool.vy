@@ -1,15 +1,20 @@
-# pragma version ^0.4.0
+# @version 0.3.10
 # TEACHING EXAMPLE. Do not deploy. See README.md.
 #
-# Pool implementaions demos three different variations:
+# One pool implementation, demonstrated three ways:
 #   NATIVE=True,  CEI=False  -> drainable (the bug)
 #   NATIVE=False, CEI=False  -> safe: an ERC20 asset transfer has no callback
 #   NATIVE=True,  CEI=True   -> safe: the effect is committed before the payout
 #
-# The reentrancy bug is present in all three: withdraw() and withdraw_to() guard
-# with two SEPARATE locks (locked_main, locked_emergency) instead of one shared
-# lock, so a call already inside withdraw() is not blocked from re-entering
-# withdraw_to(). Only the payout medium and the ordering change between deploys.
+# The reentrancy bug is present in all three: withdraw() and withdraw_to() carry
+# DIFFERENT @nonreentrant keys ('lock_main' and 'lock_emergency') instead of one
+# shared key, so a call already inside withdraw() is not blocked from re-entering
+# withdraw_to(). It is the same shape as the July 2023 Vyper bug, where functions
+# meant to share one key compiled to separate slots. Only the payout medium and
+# the ordering change between deploys.
+#
+# Vyper 0.4.x removed keyed @nonreentrant (one global lock now), so this targets
+# Vyper 0.3.10. See README.md for the pinned run command.
 
 interface ERC20:
     def transfer(to: address, amount: uint256) -> bool: nonpayable
@@ -21,11 +26,8 @@ ASSET: immutable(address)   # the ERC20 asset, or empty for the native-asset poo
 
 deposits: public(HashMap[address, uint256])
 
-locked_main: bool
-locked_emergency: bool
 
-
-@deploy
+@external
 def __init__(_native: bool, _cei: bool, _asset: address):
     """
     @notice Configure which variant of the pool to deploy.
@@ -50,34 +52,30 @@ def deposit(amount: uint256 = 0):
     if NATIVE:
         self.deposits[msg.sender] += msg.value
     else:
-        assert extcall ERC20(ASSET).transferFrom(msg.sender, self, amount, default_return_value=True)
+        assert ERC20(ASSET).transferFrom(msg.sender, self, amount, default_return_value=True)
         self.deposits[msg.sender] += amount
 
 
 @external
+@nonreentrant('lock_main')
 def withdraw():
     """
     @notice Withdraw the caller's whole balance to the caller.
-    @dev Guards with locked_main; the payout happens inside _pay.
+    @dev Guards with the 'lock_main' reentrancy key; the payout happens in _pay.
     """
-    assert not self.locked_main, "reentrant"
-    self.locked_main = True
     self._pay(msg.sender)
-    self.locked_main = False
 
 
 @external
+@nonreentrant('lock_emergency')
 def withdraw_to(recipient: address):
     """
     @notice Withdraw the caller's whole balance to another recipient.
-    @dev Guards with locked_emergency, a DIFFERENT lock from withdraw(), so a call
+    @dev Guards with 'lock_emergency', a DIFFERENT key from withdraw(), so a call
          already inside withdraw() is not blocked from re-entering here.
     @param recipient Address that receives the payout.
     """
-    assert not self.locked_emergency, "reentrant"
-    self.locked_emergency = True
     self._pay(recipient)
-    self.locked_emergency = False
 
 
 @internal
@@ -110,4 +108,4 @@ def _send(recipient: address, amount: uint256):
     if NATIVE:
         raw_call(recipient, b"", value=amount)   # runs the recipient's code: a callback
     else:
-        assert extcall ERC20(ASSET).transfer(recipient, amount, default_return_value=True)   # no callback
+        assert ERC20(ASSET).transfer(recipient, amount, default_return_value=True)   # no callback

