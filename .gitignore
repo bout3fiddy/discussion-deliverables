@@ -1,0 +1,10 @@
+# Python / test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Study Material
+docs/

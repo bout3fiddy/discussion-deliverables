@@ -1,0 +1,155 @@
+# Three security changes to Curve's core AMM contracts
+
+Three security changes to Curve's core smart contracts, the `stableswap-ng` and `tricrypto-ng` liquidity pools that hold financial assets and let anyone swap one asset for another against them. The changes followed the exploited Vyper compiler vulnerability in July 2023.
+
+## Primer on AMMs
+
+Traditional exchanges run order books where buyers post bids, sellers post asks, and a matching engine pairs. Orderbooks are a data-intensive infrastructure that requires buyers and sellers to be present constantly re-quoting and reactive to the market, at an extremely high throughput (some participants require nanosecond level execution of their orders and the ability to cancel orders quickly). On a distributed ledger such as public blockchains, this is not possible. The ledger is distributed and every write to the global shared state is extremely expensive: every step costs measurable computational units called GAS. 
+
+In such conditions, markets can be replaced by immutable programs (called smart contracts) that exist on the distributed ledger. These special class of immutable smart contracts are called Automatic Market Makers (AMMs), which replaces an orderbook's matching engine with a suite of mathematical formulae that manage asset flow within the market, and an accompanying mathematical invariant that must hold true during an exchange of assets within the market. 
+
+The AMM smart contract holds a reserve of assets (henceforth called a liquidity pool) and prices each trade from how much of each asset the pool currently holds. That pricing function, governed by the invariant, is called a bonding curve. Liquidity providers deposit assets and receive shares they later redeem; traders swap against the pool, and the bonding curve prices each swap based on the local state of the smart contract.
+
+## Summary
+
+In [July 2023 a bug in the Vyper compiler](https://hackmd.io/@vyperlang/HJUgNMhs2), introduced in a multi-year (2018-2023) refactor of the Vyper compiler, caused a mutex mechanism to malfunction, therefore allowing external callers to 'reenter' the smart contract in the midst of an execution and exploit stale state to cause financial losses. The result was a lost of about $70M and an exodus of $ 1.5B from the client's smart contracts (despite the fact that they were not affected).
+
+The gist of the attack is as follows:
+
+1. Each mutex can assign its own key, and therefore decorating a function with a mutex and a shared key e.g. `@nonreentrant('shared_key_A')` would 'lock' re-entry for all functions that shared the key. 
+2. But the compiler bug introduced caused each shared key to be unique, despite the source code showing different shared key names, therefore disabling cross-function mutex locks. 
+3. Consequently, if the decorated functions had the possibility to hand over execution context to an external caller, the external caller would be able to re-enter in-between a transaction, and exploit a stale state (if there was profit to be made or DoS to be caused).
+
+No smart contract audit had looked at the compiler, and the compiler itself had not been scrutinised by external auditors (lack of funding, people, and therefore coordination). Beyond non-technical constraints, the leak also required all of the following conditions to be true:
+
+1. a malfunctioning mutex lock,
+2. the smart contract handing over execution context to an external caller, and
+3. stale smart contract state existing before execution context is handed over to an external caller.
+
+Following the hack, several post-hack endeavours were put into motion. Vyper went from being not audited to being the most audited smart contract language, and I re-designed all Curve AMM smart contracts with lessons learnt from the incident. This code repository contains, of the many security-related changes introduced, three changes that remain relevant to this day.
+
+---
+
+## The three changes
+
+1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy))
+2. Disallowing handing over execution context to external callers ([code](./code/02-no-native-eth.vy)) 
+3. Removing unintentional features ([code](./code/03-admin-fees-internal-and-no-gulp.vy)) 
+
+### 1. Optimistic transfers (`exchange_received`)
+
+A second swap entry point sits beside the normal `exchange`. The normal path pulls assets with `transferFrom`, which needs an approval: a standing permission that lets the pool reach into your wallet later, after the swap you wanted. The new path assumes the caller already pushed the assets in with a plain `transfer`, and the pool reads the surplus, `dx = balanceOf(self) - stored_balances[i]`. Both paths run through one helper, `_transfer_in`, which branches on a boolean.
+
+Two reasons carry it:
+
+1. Security. The funds a pool can touch shrink from anything ever approved down to whatever sits in the pool for this one call. That closes a whole class of approval-drain exploits, most of all for routers that hold approvals across dozens of pools. It sits on top of the existing `@nonreentrant('lock')` as a second layer.
+2. Gas. In a multi-hop route, each hop drops one redundant `transferFrom`, a cross-contract call carrying an allowance read and write. The optimistic branch adds only a `balanceOf` read and a subtraction.
+
+What an auditor broke: MixBytes found that `get_virtual_price()` could be manipulated by skimming directly-transferred assets (C-2, Critical), that a 1-wei transfer could grief a strict `dx == _dx` check (M-2, fixed by relaxing it to `assert _dx >= dx`), and that rebasing assets break the surplus diff (C-1, so `exchange_received` refuses pools holding them). All fixed.
+
+Source: [`CurveStableSwapNG.vy#L358`](https://github.com/curvefi/stableswap-ng/blob/2abe778f40206a6c0fd108a0a53ad3266cbedeee/contracts/main/CurveStableSwapNG.vy#L358).
+
+### 2. Removing native ETH
+
+The old pools were `@payable`. They accepted `msg.value`, wrapped and unwrapped WETH, and threaded a `use_eth: bool` flag through every value-moving entry point. Sending native ETH runs the recipient's `fallback`/`receive` code, an implicit callback, and the reentrancy bug turned that callback into the drain. A compliant ERC-20 `transfer` only moves a number and hands over no control. The new pools delete native ETH and speak only ERC-20.
+
+Why it matters: every point where a contract hands execution to code it does not control is a re-entry window, the place where one guard failure becomes a loss. Fewer handoffs leave fewer windows. The cutover removed 121 lines net (51 added, 172 deleted), and each deleted line is one fewer for an auditor to reason about and an attacker to reach.
+
+The trade-off: the pool no longer offers one-call native-ETH convenience. A user holding ETH wraps it to WETH before depositing and unwraps after withdrawing, a one-line step that routers and front-ends already perform. Pushing that to the edge keeps the core contract small and auditable.
+
+What an auditor broke: MixBytes C-3 (Critical) flagged read-only reentrancy specifically for base pools "that use ETH", independent evidence that native ETH combined with reentrancy is the dangerous pair. Deleting native ETH removes the whole class instead of patching one path.
+
+Source: [`CurveTricryptoOptimized.vy`](https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy).
+
+### 3. Internal admin fees, no gulp
+
+The old public `claim_admin_fees()` re-read the raw asset balances (the literal `# Gulp here` block), overwrote the tracked ledger with `balanceOf`, recomputed the invariant `D`, and so counted any assets donated to the pool as claimable profit. The new `_claim_admin_fees` is internal only and derives fees from `xcp_profit`, the pool's own running tally of fee profit, which moves only on real swap and deposit fees. A donated asset never turns into profit.
+
+The principle: a side effect must not become load-bearing, and a contract should act only on state it produced on purpose. Reading profit from a raw balance is the same shape as the hack, acting on state the contract never authored. Deposits are now measured as deltas, and donations are refused: `assert dx >= _dx  # dev: user didn't give us coins`.
+
+The nuance, because the gulp was used on purpose. A sophisticated client donated assets to rebalance: the gulp nudged the pool's `price_scale` (its on-chain record of the current price between the pool's assets) toward the market price. "Donate to rebalance" was a real lever, and removing it cost that client something. It is still the right call. The lever depended on an implementation side effect, anyone could pull it through the permissionless claim, and the legitimate intent already has sanctioned interfaces in `add_liquidity` and `exchange`. Landing the change safely meant reaching that client directly.
+
+What an auditor broke: ChainSecurity CS-TRICRYPTO-NG-004, "First Depositor Can Manipulate the Share Value to Steal Future Deposits", through "a direct transfer to the pool followed by calling `claim_admin_fees()`". That is the gulp, exploited. Internal-only claiming plus `xcp_profit`-based fees remove the lever.
+
+Source: old [`CurveCryptoSwap.vy#L397`](https://github.com/curvefi/curve-crypto-contract/blob/d7d04cd9ae038970e40be850df99de8c1ff7241b/contracts/tricrypto/CurveCryptoSwap.vy#L397) and new [`CurveTricryptoOptimized.vy#L1099`](https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy#L1099).
+
+One move runs through all three: take a guarantee the old design assumed, and make the contract enforce it by construction, with less standing trust, fewer callbacks, and explicit accounting.
+
+---
+
+## How correctness is established
+
+The Vyper was the small part.
+
+Testing. The contracts are Vyper and the whole test suite is Python, so it checks economic behaviour rather than syntax. [titanoboa](https://github.com/vyperlang/titanoboa) compiles and runs the real contracts in an in-process EVM and exposes each function as a Python method. The core is stateful, property-based fuzzing. A hypothesis `RuleBasedStateMachine` sequences random swaps, deposits, withdrawals, and ramps (gradual changes to the pool's `A` and `gamma` parameters), re-checking the economic invariants after every step:
+
+1. balances reconcile three ways. The stored `self.balances`, the on-chain `balanceOf`, and an independent Python mirror all agree.
+2. `virtual_price` and `xcp_profit` only ever rise, so fees accrue to depositors.
+3. LP supply stays exact, with no phantom shares minted or burned.
+4. a donation cannot be extracted.
+
+Around that sit differential testing against an independent Python model of the curve math (two implementations that agree are far stronger evidence than one asserted alone), a combinatorial matrix that runs every feature across `{basic, meta}` pools by `{plain, oracle, rebasing}` assets by decimal combinations, and a small amount of mainnet-fork integration. This net is what makes an aggressive security change safe to land: the fuzzer does not care which feature moved, it keeps proving the economics hold.
+
+External audits. Several independent firms reviewed these exact mechanisms and found real, exploitable edge cases. External review pays off because auditors are paid adversaries with different blind spots. The reports are public, so an integrator reads the reasoning behind a change.
+
+Documentation as a software artifact. The technical docs at [docs.curve.finance](https://docs.curve.finance) are a MkDocs Material project, 180 Markdown files, versioned in Git, gated in CI by a `lychee` link checker and the `Vale` prose linter against the Google and GitHub style guides, and deployed to Vercel from `master`. Every external function gets the same reference from one shared template: the full Vyper signature, a prose description, returns and emitted events, a parameter table, a collapsible tab of annotated source, and a runnable example. The whitepaper math renders in-page and links to the exact function that implements it. The contracts are immutable, so the docs were how every behaviour change reached the people who build on the pools: an integrator learns the new behaviour from the reference, since the bytecode cannot be patched and is rarely read. The site started as a private `curve-mkdocs` repo, then opened to outside contributors. The lead maintainer (`mo`, over 92% of around 1,950 commits) was hired, mentored, and carried it for years, so the docs do not rest on one person either.
+
+---
+
+## Beyond the code
+
+Several of these changes are safe only when integrators build their transactions correctly, which the contract cannot enforce. The work was done once the ecosystem knew how to adopt the change without losing funds, well after the branch compiled and the tests passed. That meant:
+
+1. teaching the routers that chain pools together for the best price (1inch, CowSwap, Paraswap, Curve's own router) the push-then-call flow for `exchange_received`, and to wrap and unwrap WETH themselves once native ETH was gone.
+2. reaching arbitrageurs, who profit by evening out price differences between markets and are ordinary expected users, and MEV searchers, who build custom transactions to capture on-chain profit. The `exchange_received` NatSpec names dex aggregators and arbitrageurs as its audience, and searchers are the same kind of approval-free power user.
+
+Shipping a sharper, cheaper, safer primitive carries an obligation to teach people how to hold it.
+
+---
+
+## Engineering lessons
+
+What the rebuild distilled to.
+
+0. Know the platform that runs the code. The source states the logic; the platform under it, the hardware, the virtual machine, the compiler, is what executes, and it owns both behaviour and speed. The runnable [branch-prediction example](./examples/03-branch-prediction/) shows the speed side: one loop runs faster on sorted input because the CPU's branch predictor handles it better.
+1. Verify the compiled output. The July 2023 bug was correct Vyper compiled to wrong bytecode, and reading the source line by line would never have found it. This is why the tests compile and run the real contracts and check them against an independent reference model, instead of trusting the source text.
+2. Treat happy accidents as bugs. The gulp let a side effect become a load-bearing feature that nobody designed. An unintended feature is a liability until it is rebuilt on purpose, through an interface designed for it.
+3. A bug is a coordination failure. No single mistake shipped the compiler bug: complacent users, a maintainer who was the only person on the compiler, and no process auditing the compiler itself all lined up. Resilience is a property of process, so the fixes were structural, more reviewers and independent audits and no single point of failure.
+4. Apply security effort where the consequences are. Rigor should match what happens when the code is wrong. A throwaway script can carry a bug; an immutable contract holding deposits cannot. One cheap practice rules out a whole class of fault: checks-effects-interactions, where internal records update before any external call, so a callback finds finalized state.
+5. Every near-duplicate is a liability. Copied logic drifts and multiplies the surface to verify. The redesign collapsed 21 near-duplicate stableswap implementations into 2, with the configuration as runtime parameters, which made audits cheaper and left one source of truth.
+
+---
+
+## Deposited funds
+
+Instead of asserting a number, [`code/liquidity/fetch-ng-tvl.sh`](./code/liquidity/fetch-ng-tvl.sh) measures the value live from the public Curve API:
+
+| Registry | TVL (USD) | Active pools |
+|----------|----------:|-------------:|
+| Stableswap-NG | ~$793.7M | 987 |
+| Twocrypto-NG | ~$277.6M | 361 |
+| Tricrypto-NG | ~$30.2M | 131 |
+| Total | ≈ $1.10 B | 1,479 |
+
+Snapshot 2026-06-19. TVL (total value locked, the US-dollar value of assets deposited in the pools) moves with prices and deposits. The methodology and the no-double-counting details are in [code/liquidity/README.md](./code/liquidity/README.md).
+
+---
+
+## Runnable examples
+
+Three small examples in [examples/](./examples/) demonstrate the ideas, each self-contained with its own README:
+
+1. [Native ETH reentrancy](./examples/01-native-eth-reentrancy/): the same attack drains a pool that pays in native ETH and leaves an ERC-20-only pool untouched, though both carry the identical lock mistake. The teaching version of change 2 (Vyper, titanoboa).
+2. [ERC-20 approvals](./examples/02-erc20-approvals/): a swap needs an approval, and the send-then-call pattern does the same trade without one. The teaching version of change 1 (Vyper, titanoboa).
+3. [Branch prediction](./examples/03-branch-prediction/): the same loop runs faster on sorted input because the speed lives in the CPU's branch predictor. The hardware side of lessons 0 and 1 (Python, with Linux `perf` and macOS Instruments recipes for reading the branch misses).
+
+---
+
+## Where to start
+
+The READMEs and the short excerpts hold everything a reader needs.
+
+1. This README, for the whole story.
+2. The three excerpts in [`code/`](./code/), short annotated quotes with headers citing the exact source file, commit, and lines. A good order: [`01-optimistic-transfers.vy`](./code/01-optimistic-transfers.vy) for the cleanest security-and-gas win, then [`03-admin-fees-internal-and-no-gulp.vy`](./code/03-admin-fees-internal-and-no-gulp.vy) for the most design judgement, then [`02-no-native-eth.vy`](./code/02-no-native-eth.vy) for the 121-line deletion.
+3. The runnable demonstrations in [`examples/`](./examples/), each executable in seconds; the first two use the same titanoboa stack as the real pools.
+4. [`code/liquidity/`](./code/liquidity/), the live TVL script and how it avoids double-counting metapools.
