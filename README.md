@@ -58,11 +58,11 @@ Source: [`CurveStableSwapNG.vy#L358`](https://github.com/curvefi/stableswap-ng/b
 
 Earlier designs allowed for handing over execution context to external callers for transactions involving specific asset types. These asset types did not require an approval transaction and in general had cheaper transfer costs. The older contracts exploited these characteristics to optimise exchange costs. But the same optimisation also leaves open an attack vector.
 
-These special transactions always call, for whatever reason, the receiver contract's hidden `_fallback()` method as a callback after receiving the assets. Which means that if, in the middle of a transaction execution, the sender smart contract invokes a transfer to a malicious smart contract, and the sender smart contract has a vulnerability in the mutex lock, then the malicious receiver smart contract's `_fallback()` method containing malicious payload could infiltrate/re-enter the sender smart contract in the middle of a transaction. If the sender smart contract's state was stale, e.g. the sender smart contract initiated a transfer before book-keeping the exchange, the malicious smart contract could re-enter the contract knowing that the sender has not registered the transfer yet, and therefore extract more assets than what it gives in (therefore: breaking the invariant of the exchange's mathematical functions).
+These special transactions always call, for whatever reason, the receiver contract's hidden fallback `__default__()` method as a callback after receiving the assets. Which means that if, in the middle of a transaction execution, the sender smart contract invokes a transfer to a malicious smart contract, and the sender smart contract has a vulnerability in the mutex lock, then the malicious receiver smart contract's `__default__()` method containing malicious payload could infiltrate/re-enter the sender smart contract in the middle of a transaction. If the sender smart contract's state was stale, e.g. the sender smart contract initiated a transfer before book-keeping the exchange, the malicious smart contract could re-enter the contract knowing that the sender has not registered the transfer yet, and therefore extract more assets than what it gives in (therefore: breaking the invariant of the exchange's mathematical functions).
 
 This was in fact the very same callback feature (a feature present in special kinds of blockchain implementation called the Ethereum Virtual Machine, or EVM), that the exploiters eventually utilised to steal assets from the exchange on July 2023. 
 
-The gist here is: every point where a contract hands execution to code it does not control is a re-entry window, the place where one guard failure becomes a catastrophic loss. Fewer/No handoffs reduce that attack vector, but also: implementing a new book-keeping approach where the local state is committed before an execution context handoff is initiated also ensures this exploit is not profitable even if the exploiter somehow finds a way to re-enter.
+The gist here is: every point where a contract hands execution to code it does not control is a re-entry opportunity, and increases the chances that one guard failure leads to catastrophic losses. Fewer/No handoffs reduce that attack vector, but also: implementing a new book-keeping approach where the local state is committed before an execution context handoff is initiated also ensures this exploit is not profitable even if the exploiter somehow finds a way to re-enter.
 
 The primary tradeoff made here was that we gave up the optimisation in favor of security, and chose to lobby for deeper security changes in the underlying execution platform itself, for instance by designing and lobbying for the [PAY opcode into the EVM](https://eips.ethereum.org/EIPS/eip-5920) which would allow for the transfer of these special assets without handing over execution context.
 
@@ -82,13 +82,11 @@ Source: old [`CurveCryptoSwap.vy#L397`](https://github.com/curvefi/curve-crypto-
 
 One move runs through all three: take a guarantee the old design assumed, and make the contract enforce it by construction, with less standing trust, fewer callbacks, and explicit accounting.
 
----
-
 ## How correctness is established
 
-The Vyper was the small part.
+### Testing
 
-Testing. The contracts are Vyper and the whole test suite is Python, so it checks economic behaviour rather than syntax. [titanoboa](https://github.com/vyperlang/titanoboa) compiles and runs the real contracts in an in-process EVM and exposes each function as a Python method. The core is stateful, property-based fuzzing. A hypothesis `RuleBasedStateMachine` sequences random swaps, deposits, withdrawals, and ramps (gradual changes to the pool's `A` and `gamma` parameters), re-checking the economic invariants after every step:
+The contracts are Vyper and the whole test suite is Python, so it checks economic behaviour rather than syntax. [titanoboa](https://github.com/vyperlang/titanoboa) compiles and runs the real contracts in an in-process EVM and exposes each function as a Python method. The core is stateful, property-based fuzzing. A hypothesis `RuleBasedStateMachine` sequences random swaps, deposits, withdrawals, and ramps (gradual changes to the pool's `A` and `gamma` parameters), re-checking the economic invariants after every step:
 
 1. balances reconcile three ways. The stored `self.balances`, the on-chain `balanceOf`, and an independent Python mirror all agree.
 2. `virtual_price` and `xcp_profit` only ever rise, so fees accrue to depositors.
@@ -97,13 +95,13 @@ Testing. The contracts are Vyper and the whole test suite is Python, so it check
 
 Around that sit differential testing against an independent Python model of the curve math (two implementations that agree are far stronger evidence than one asserted alone), a combinatorial matrix that runs every feature across `{basic, meta}` pools by `{plain, oracle, rebasing}` assets by decimal combinations, and a small amount of mainnet-fork integration. This net is what makes an aggressive security change safe to land: the fuzzer does not care which feature moved, it keeps proving the economics hold.
 
-External audits. Several independent firms reviewed these exact mechanisms and found real, exploitable edge cases. External review pays off because auditors are paid adversaries with different blind spots. The reports are public, so an integrator reads the reasoning behind a change.
+### External audits
+
+Several independent firms reviewed these exact mechanisms and found real, exploitable edge cases. External review pays off because auditors are paid adversaries with different blind spots. The reports are public, so an integrator reads the reasoning behind a change.
 
 Documentation as a software artifact. The technical docs at [docs.curve.finance](https://docs.curve.finance) are a MkDocs Material project, 180 Markdown files, versioned in Git, gated in CI by a `lychee` link checker and the `Vale` prose linter against the Google and GitHub style guides, and deployed to Vercel from `master`. Every external function gets the same reference from one shared template: the full Vyper signature, a prose description, returns and emitted events, a parameter table, a collapsible tab of annotated source, and a runnable example. The whitepaper math renders in-page and links to the exact function that implements it. The contracts are immutable, so the docs were how every behaviour change reached the people who build on the pools: an integrator learns the new behaviour from the reference, since the bytecode cannot be patched and is rarely read. The site started as a private `curve-mkdocs` repo, then opened to outside contributors. The lead maintainer (`mo`, over 92% of around 1,950 commits) was hired, mentored, and carried it for years, so the docs do not rest on one person either.
 
----
-
-## Beyond the code
+### Beyond the code
 
 Several of these changes are safe only when integrators build their transactions correctly, which the contract cannot enforce. The work was done once the ecosystem knew how to adopt the change without losing funds, well after the branch compiled and the tests passed. That meant:
 
@@ -112,11 +110,7 @@ Several of these changes are safe only when integrators build their transactions
 
 Shipping a sharper, cheaper, safer primitive carries an obligation to teach people how to hold it.
 
----
-
 ## Engineering lessons
-
-What the rebuild distilled to.
 
 0. Know the platform that runs the code. The source states the logic; the platform under it, the hardware, the virtual machine, the compiler, is what executes, and it owns both behaviour and speed. The runnable [branch-prediction example](./examples/03-branch-prediction/) shows the speed side: one loop runs faster on sorted input because the CPU's branch predictor handles it better.
 1. Verify the compiled output. The July 2023 bug was correct Vyper compiled to wrong bytecode, and reading the source line by line would never have found it. This is why the tests compile and run the real contracts and check them against an independent reference model, instead of trusting the source text.
@@ -124,8 +118,6 @@ What the rebuild distilled to.
 3. A bug is a coordination failure. No single mistake shipped the compiler bug: complacent users, a maintainer who was the only person on the compiler, and no process auditing the compiler itself all lined up. Resilience is a property of process, so the fixes were structural, more reviewers and independent audits and no single point of failure.
 4. Apply security effort where the consequences are. Rigor should match what happens when the code is wrong. A throwaway script can carry a bug; an immutable contract holding deposits cannot. One cheap practice rules out a whole class of fault: checks-effects-interactions, where internal records update before any external call, so a callback finds finalized state.
 5. Every near-duplicate is a liability. Copied logic drifts and multiplies the surface to verify. The redesign collapsed 21 near-duplicate stableswap implementations into 2, with the configuration as runtime parameters, which made audits cheaper and left one source of truth.
-
----
 
 ## Deposited funds
 
@@ -139,18 +131,6 @@ Instead of asserting a number, [`code/liquidity/fetch-ng-tvl.sh`](./code/liquidi
 | Total | ≈ $1.10 B | 1,479 |
 
 Snapshot 2026-06-19. TVL (total value locked, the US-dollar value of assets deposited in the pools) moves with prices and deposits. The methodology and the no-double-counting details are in [code/liquidity/README.md](./code/liquidity/README.md).
-
----
-
-## Runnable examples
-
-Three small examples in [examples/](./examples/) demonstrate the ideas, each self-contained with its own README:
-
-1. [Native ETH reentrancy](./examples/01-native-eth-reentrancy/): the same attack drains a pool that pays in native ETH and leaves an ERC-20-only pool untouched, though both carry the identical lock mistake. The teaching version of change 2 (Vyper, titanoboa).
-2. [ERC-20 approvals](./examples/02-erc20-approvals/): a swap needs an approval, and the send-then-call pattern does the same trade without one. The teaching version of change 1 (Vyper, titanoboa).
-3. [Branch prediction](./examples/03-branch-prediction/): the same loop runs faster on sorted input because the speed lives in the CPU's branch predictor. The hardware side of lessons 0 and 1 (Python, with Linux `perf` and macOS Instruments recipes for reading the branch misses).
-
----
 
 ## Where to start
 
