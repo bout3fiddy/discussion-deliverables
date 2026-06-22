@@ -113,31 +113,34 @@ Shipping critical infrastructure holding several hundred millions to billions of
 
 The three changes mentioned are a small part of larger set of lessons learnt during the refactoring and rebuilding process, some of which are summarised below.
 
-0. Know the platform that runs the code. The source states the logic; the platform under it, the hardware, the virtual machine, the compiler, is what executes, and it owns both behaviour and speed. The runnable [branch-prediction example](./examples/03-branch-prediction/) shows the speed side: one loop runs faster on sorted input because the CPU's branch predictor handles it better.
-1. Verify the compiled output. The July 2023 bug was correct Vyper compiled to wrong bytecode, and reading the source line by line would never have found it. This is why the tests compile and run the real contracts and check them against an independent reference model, instead of trusting the source text.
-2. In mission critical software, treat unintentional features as bugs. The gulp let a side effect become a load-bearing feature that nobody designed. An unintended feature is a liability until it is rebuilt on purpose, through an interface designed for it.
-3. A bug is a coordination failure. No single mistake shipped the compiler bug: complacent users, a maintainer who was the only person on the compiler, and no process auditing the compiler itself all lined up. Resilience is a property of process, so the fixes were structural, more reviewers and independent audits and no single point of failure.
-4. Apply security effort where the consequences are. Rigor should match what happens when the code is wrong. A throwaway script can carry a bug; an immutable contract holding deposits cannot. One cheap practice rules out a whole class of fault: checks-effects-interactions, where internal records update before any external call, so a callback finds finalized state.
-5. Every near-duplicate is a liability. Copied logic drifts and multiplies the surface to verify. The redesign collapsed 21 near-duplicate stableswap implementations into 2, with the configuration as runtime parameters, which made audits cheaper and left one source of truth.
+The core, hard-earned lesson is this: the actual platform is the underlying hardware / virtual machine that runs the code produced by the compiler, and not the source code that is written by a programmer. The compiler can introduce unintuitive / unexpected artifacts, which are not visible in the source code, the hardware can run code in mysterious ways. A couple of examples:
+
+a. The July 2023 Vyper compiler vulnerability exploit is one example. 
+b. A python [branch-prediction example](./examples/03-branch-prediction/) is another one that shows how the underlying compiler can do unintuitive things to the code where simply sorting inputs leads to faster code.
+c. Apple M-series split worker threads 50/50 between performance and efficiency threads. These are specialised processors which handle different kinds of tasks: performance cores handle heavy parallel compute and consume more power, efficiency cores do simpler calculations and consume less power. Therefore a source code's performance increase by adding more workers is not linear, and drops sharply after exhausting performance threads. This is not visible in the compiler or the source code, and requires telemetry and some debugging to figure out what's actually happening.
+
+Based on this core premise, here are the lessons learnt:
+
+1. Verify the compiled output.
+2. In mission critical software, treat unintentional features as bugs. 
+3. A bug is a coordination failure. A post-hack analysis revealed that no single mistake caused the compiler bug. It was a mix of complacent users trusting compiler output, a complex smart contract language framework with a bus factor of 1 (due to lack of funding), and no processes involving audits.
+4. Listen and empathise to users, and find out their true needs. Quite a lot of work was done to reduce transaction costs, but the most important users cared the most about not giving approvals to smart contracts, less so on transaction costs: they'd only transact if there was a profit to be made (including cost of profit).
 
 ## Deposited funds
 
-Instead of asserting a number, [`code/liquidity/fetch-ng-tvl.sh`](./code/liquidity/fetch-ng-tvl.sh) measures the value live from the public Curve API:
+A consequence of the exploit was an exodus of billions of dollars of liquidity from the exchange. A consequence of pursuing security resulted in the following liquidity staying. These are numbers fetched live from the public blockchain, from contracts that were deployed post-hack, using [`code/liquidity/fetch-ng-tvl.sh`](./code/liquidity/fetch-ng-tvl.sh):
 
-| Registry | TVL (USD) | Active pools |
-|----------|----------:|-------------:|
-| Stableswap-NG | ~$793.7M | 987 |
-| Twocrypto-NG | ~$277.6M | 361 |
-| Tricrypto-NG | ~$30.2M | 131 |
-| Total | ≈ $1.10 B | 1,479 |
-
-Snapshot 2026-06-19. TVL (total value locked, the US-dollar value of assets deposited in the pools) moves with prices and deposits. The methodology and the no-double-counting details are in [code/liquidity/README.md](./code/liquidity/README.md).
+| Contract Type | Total Value (USD) | # Active Liquidity Pools |
+|---|---:|---:|
+| Stablecoins | $793.7M | 987 |
+| 2-asset Volatile Markets | $277.6M | 361 |
+| 3-asset Volatile markets | $30.2M | 131 |
+| Grand total | ≈ $1.10 B | 1,479 |
 
 ## Where to start
 
 The READMEs and the short excerpts hold everything a reader needs.
 
 1. This README, for the whole story.
-2. The three excerpts in [`code/`](./code/), short annotated quotes with headers citing the exact source file, commit, and lines. A good order: [`01-optimistic-transfers.vy`](./code/01-optimistic-transfers.vy) for the cleanest security-and-gas win, then [`03-admin-fees-internal-and-no-gulp.vy`](./code/03-admin-fees-internal-and-no-gulp.vy) for the most design judgement, then [`02-no-native-eth.vy`](./code/02-no-native-eth.vy) for the 121-line deletion.
-3. The runnable demonstrations in [`examples/`](./examples/), each executable in seconds; the first two use the same titanoboa stack as the real pools.
-4. [`code/liquidity/`](./code/liquidity/), the live TVL script and how it avoids double-counting metapools.
+2. The three excerpts in [`code/`](./code/), short annotated quotes with headers citing the exact source file, commit, and lines.
+3. The runnable demonstrations in [`examples/`](./examples/).
