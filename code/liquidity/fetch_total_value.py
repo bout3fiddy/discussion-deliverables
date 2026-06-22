@@ -10,6 +10,7 @@ Usage: uv run fetch_total_value.py
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 from urllib.request import Request, urlopen
 
 API = "https://api.curve.finance/api"
@@ -18,14 +19,15 @@ API = "https://api.curve.finance/api"
 REGISTRIES = ["factory-stable-ng", "factory-tricrypto", "factory-twocrypto"]
 
 
-def fetch(path):
-    """GET one API path and return its `data` payload, or None on failure."""
+def fetch(path: str) -> Any:
+    """GET one API path and return its `data` payload, or exit if the request fails."""
     req = Request(f"{API}/{path}", headers={"User-Agent": "curl"})
+
     try:
         with urlopen(req, timeout=150) as r:
             return json.load(r).get("data")
-    except Exception:
-        raise SystemExit("could not reach API")
+    except Exception as exc:
+        raise SystemExit(f"could not reach API: {exc}") from exc
 
 
 def main():
@@ -40,7 +42,7 @@ def main():
     ]
 
     # Fetch every pair concurrently, dropping networks that returned nothing.
-    def pool_data(job):
+    def pool_data(job: tuple[str, str]) -> Any:
         registry, net = job
         return fetch(f"getPools/{net}/{registry}")
 
@@ -48,7 +50,7 @@ def main():
         results = thread_pool.map(pool_data, jobs)
     payloads = [data for data in results if data]
 
-    # Sum totals fetched iff pools have non-zero liquidity
+    # Total the per-registry TVL, and count the pools that hold any liquidity.
     total = sum(p.get("tvlAll", 0) for p in payloads)
     active = [
         d for p in payloads for d in p.get("poolData", []) if d.get("usdTotal", 0) > 0
