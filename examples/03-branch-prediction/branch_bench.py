@@ -1,11 +1,8 @@
 """Branch prediction: the same loop runs faster on sorted input.
 
-The source code is identical no matter how the input is ordered. Sorting the
-input first makes the loop measurably faster, because the CPU predicts the `if`
-branch almost perfectly on sorted data and mispredicts roughly half the time on
-random data. The two runs execute the same instructions on the same values; only
-the order differs. You cannot see the difference by reading the source. You have
-to measure it.
+Sorting the input first makes the loop measurably faster, because the CPU predicts
+the `if` branch almost perfectly on sorted data and mispredicts roughly half the
+time on random data.
 
 Run: uv run branch_bench.py
 """
@@ -16,52 +13,56 @@ import sys
 import time
 
 
-def calc_sum(values):
+def calc_sum(values: list[int], repeat: int) -> int:
+    """Sum the values below 128 and those at or above it, scanning `values` `repeat` times.
+
+    The split `if` is the branch whose misprediction cost this benchmark measures.
+    Scanning the list many times amplifies that cost above timer noise.
+    """
     lo = 0
     hi = 0
-    for _ in range(200):
+
+    for _ in range(repeat):
         for x in values:
             if x < 128:
                 lo += x
             else:
                 hi += x
+
     return lo + hi
 
 
-def median_ms(values):
-    calc_sum(values)  # warm up
+def median_ms(values: list[int], repeat: int, trials: int) -> float:
+    """Return the median wall-clock time of calc_sum, in milliseconds, over `trials` runs."""
+    calc_sum(values, repeat)  # warm up before timing
+
     times = []
-    for _ in range(10):
-        t0 = time.perf_counter()
-        calc_sum(values)
-        times.append(time.perf_counter() - t0)
+    for _ in range(trials):
+        start = time.perf_counter()
+        calc_sum(values, repeat)
+        times.append(time.perf_counter() - start)
+
     return statistics.median(times) * 1000.0
 
 
 def main():
     random.seed(42)
-    data = [random.randint(0, 255) for _ in range(32768)]
+
+    n = 32768
+    repeat = 200
+    trials = 10
+
+    data = [random.randint(0, 255) for _ in range(n)]
     unsorted = list(data)
     ordered = sorted(data)
 
-    u = median_ms(unsorted)
-    s = median_ms(ordered)
+    slow = median_ms(unsorted, repeat, trials)
+    fast = median_ms(ordered, repeat, trials)
 
-    print(f"python {sys.version.split()[0]}, N={32768}, repeat={200}, trials={10}")
-    print(f"unsorted input: {u:8.2f} ms (median)")
-    print(f"sorted input:   {s:8.2f} ms (median)")
-    print(f"sorted is {u / s:.2f}x faster")
-
-    # let's flip the order just to see if the results are consistent
-    s = median_ms(ordered)
-    u = median_ms(unsorted)
-
-    print("Run order flipped ... ")
-
-    print(f"python {sys.version.split()[0]}, N={32768}, repeat={200}, trials={10}")
-    print(f"sorted input:   {s:8.2f} ms (median)")
-    print(f"unsorted input: {u:8.2f} ms (median)")
-    print(f"sorted is {u / s:.2f}x faster")
+    print(f"python {sys.version.split()[0]}, N={n}, repeat={repeat}, trials={trials}")
+    print(f"unsorted input: {slow:8.2f} ms (median)")
+    print(f"sorted input:   {fast:8.2f} ms (median)")
+    print(f"sorted is {slow / fast:.2f}x faster")
 
 
 if __name__ == "__main__":

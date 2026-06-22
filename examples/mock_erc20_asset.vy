@@ -1,5 +1,5 @@
 # Minimal ERC20 asset for the demos. Not production code. Shared by examples 01 and 02.
-# No version pragma: example 01 compiles it with Vyper 0.3.10, example 02 with 0.4.x.
+# No version pragma: example 01 compiles it with Vyper 0.3.0, example 02 with 0.4.x.
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
