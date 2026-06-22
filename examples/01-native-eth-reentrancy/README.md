@@ -2,7 +2,7 @@
 
 A runnable demonstration of why the work removed native-ETH transfers. The same attack drains a pool that pays in native ETH and leaves a pool that pays in an ERC20 asset untouched, even when both carry the identical lock mistake.
 
-This is the teaching version of [change 2 (removing native ETH)](../../README.md#2-removing-native-eth) in the root README, and the [July 2023 hack](../../README.md#summary) it followed from.
+This is the teaching version of [change 2 (removing native ETH)](../../README.md#2-disallowing-handing-over-execution-context-to-external-callers) in the root README, and the [July 2023 hack](../../README.md#summary) it followed from.
 
 ## The setup
 
@@ -27,7 +27,7 @@ Against the ERC20 pool, step 3 never happens: the ERC20 `transfer` does not call
 
 With native ETH, safety depends on the reentrancy lock being correct. Remove native ETH, and that dependency is gone: an ERC20-only pool is not exploitable this way regardless of the lock. The fix removes the precondition rather than trusting a guard, which is the defense-in-depth argument in the [root README](../../README.md#summary).
 
-A note on scope: both pools here keep the same checks-effects-interactions violation on purpose (they pay out before zeroing the ledger), so the only variable that changes between them is native ETH versus ERC20. The real NG contracts also fix the ordering, updating internal balances before any external call (checks-effects-interactions), which is a second independent defense, lesson 4 in the [root README](../../README.md#engineering-lessons).
+A note on scope: both pools here keep the same checks-effects-interactions violation on purpose (they pay out before zeroing the ledger), so the only variable that changes between them is native ETH versus ERC20. The real NG contracts also fix the ordering, updating internal balances before any external call (checks-effects-interactions), which is a second independent defense, the commit-before-handoff book-keeping described in [change 2 of the root README](../../README.md#2-disallowing-handing-over-execution-context-to-external-callers).
 
 ## Run it
 

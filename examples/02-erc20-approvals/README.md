@@ -1,6 +1,6 @@
 # ERC20 transfers need an approval, and how to skip it
 
-A runnable demonstration of why approvals exist for ERC20 assets, and how the transfer-then-exchange pattern does the same trade without one. This is the teaching version of [change 1 (optimistic transfers)](../../README.md#1-optimistic-transfers-exchange_received) in the root README.
+A runnable demonstration of why approvals exist for ERC20 assets, and how the transfer-then-exchange pattern does the same trade without one. This is the teaching version of [change 1 (optimistic transfers)](../../README.md#1-approval-free-swaps-via-optimistic-transfers-exchange_received) in the root README.
 
 ## Why an approval is needed at all
 
