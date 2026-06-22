@@ -54,15 +54,17 @@ So, the approach not only strengthened security for users, it also unveiled a hi
 
 Source: [`CurveStableSwapNG.vy#L358`](https://github.com/curvefi/stableswap-ng/blob/2abe778f40206a6c0fd108a0a53ad3266cbedeee/contracts/main/CurveStableSwapNG.vy#L358).
 
-### 2. Removing native ETH
+### 2. Disallowing handing over execution context to external callers
 
-The old pools were `@payable`. They accepted `msg.value`, wrapped and unwrapped WETH, and threaded a `use_eth: bool` flag through every value-moving entry point. Sending native ETH runs the recipient's `fallback`/`receive` code, an implicit callback, and the reentrancy bug turned that callback into the drain. A compliant ERC-20 `transfer` only moves a number and hands over no control. The new pools delete native ETH and speak only ERC-20.
+Earlier designs allowed for handing over execution context to external callers for transactions involving specific asset types. These asset types did not require an approval transaction and in general had cheaper transfer costs. The older contracts exploited these characteristics to optimise exchange costs. But the same optimisation also leaves open an attack vector.
 
-Why it matters: every point where a contract hands execution to code it does not control is a re-entry window, the place where one guard failure becomes a loss. Fewer handoffs leave fewer windows. The cutover removed 121 lines net (51 added, 172 deleted), and each deleted line is one fewer for an auditor to reason about and an attacker to reach.
+These special transactions always call, for whatever reason, the receiver contract's hidden `_fallback()` method as a callback after receiving the assets. Which means that if, in the middle of a transaction execution, the sender smart contract invokes a transfer to a malicious smart contract, and the sender smart contract has a vulnerability in the mutex lock, then the malicious receiver smart contract's `_fallback()` method containing malicious payload could infiltrate/re-enter the sender smart contract in the middle of a transaction. If the sender smart contract's state was stale, e.g. the sender smart contract initiated a transfer before book-keeping the exchange, the malicious smart contract could re-enter the contract knowing that the sender has not registered the transfer yet, and therefore extract more assets than what it gives in (therefore: breaking the invariant of the exchange's mathematical functions).
 
-The trade-off: the pool no longer offers one-call native-ETH convenience. A user holding ETH wraps it to WETH before depositing and unwraps after withdrawing, a one-line step that routers and front-ends already perform. Pushing that to the edge keeps the core contract small and auditable.
+This was in fact the very same callback feature (a feature present in special kinds of blockchain implementation called the Ethereum Virtual Machine, or EVM), that the exploiters eventually utilised to steal assets from the exchange on July 2023. 
 
-What an auditor broke: MixBytes C-3 (Critical) flagged read-only reentrancy specifically for base pools "that use ETH", independent evidence that native ETH combined with reentrancy is the dangerous pair. Deleting native ETH removes the whole class instead of patching one path.
+The gist here is: every point where a contract hands execution to code it does not control is a re-entry window, the place where one guard failure becomes a catastrophic loss. Fewer/No handoffs reduce that attack vector, but also: implementing a new book-keeping approach where the local state is committed before an execution context handoff is initiated also ensures this exploit is not profitable even if the exploiter somehow finds a way to re-enter.
+
+The primary tradeoff made here was that we gave up the optimisation in favor of security, and chose to lobby for deeper security changes in the underlying execution platform itself, for instance by designing and lobbying for the [PAY opcode into the EVM](https://eips.ethereum.org/EIPS/eip-5920) which would allow for the transfer of these special assets without handing over execution context.
 
 Source: [`CurveTricryptoOptimized.vy`](https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy).
 
