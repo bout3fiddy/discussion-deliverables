@@ -16,8 +16,8 @@ In [July 2023 a bug in the Vyper compiler](https://hackmd.io/@vyperlang/HJUgNMhs
 
 The gist of the attack is as follows:
 
-1. Each mutex can assign its own key, and therefore decorating a function with a mutex and a shared key e.g. `@nonreentrant('shared_key_A')` would 'lock' re-entry for all functions that shared the key. 
-2. But the compiler bug introduced caused each shared key to be unique, despite the source code showing different shared key names, therefore disabling cross-function mutex locks. 
+1. Each mutex can assign its own key, and therefore decorating a function with a mutex and a shared key e.g. `@nonreentrant('shared_key_A')` would 'lock' re-entry for all functions that shared the same key. 
+2. The compiler bug introduced caused each shared key to be unique, despite the source code showing different shared key names, therefore disabling cross-function mutex locks. 
 3. Consequently, if the decorated functions had the possibility to hand over execution context to an external caller, the external caller would be able to re-enter in-between a transaction, and exploit a stale state (if there was profit to be made or DoS to be caused).
 
 No smart contract audit had looked at the compiler, and the compiler itself had not been scrutinised by external auditors (lack of funding, people, and therefore coordination). Beyond non-technical constraints, the leak also required all of the following conditions to be true:
@@ -32,20 +32,25 @@ Following the hack, several post-hack endeavours were put into motion. Vyper wen
 
 ## The three changes
 
-1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy))
-2. Disallowing handing over execution context to external callers ([code](./code/02-no-native-eth.vy)) 
-3. Removing unintentional features ([code](./code/03-admin-fees-internal-and-no-gulp.vy)) 
+1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy)), therefore reducing 
+   exposure to an exploited smart contract that has the authorisation to spend assets on behalf of the owner.
+2. Disallowing handing over execution context to external callers ([code](./code/02-no-native-eth.vy)).
+3. Removing unintentional 'happy accident' features ([code](./code/03-admin-fees-internal-and-no-gulp.vy)), therefore
+   paving the way to approach it more seriously.
 
-### 1. Optimistic transfers (`exchange_received`)
+### 1. Approval-free swaps via optimistic transfers (`exchange_received`)
 
-A second swap entry point sits beside the normal `exchange`. The normal path pulls assets with `transferFrom`, which needs an approval: a standing permission that lets the pool reach into your wallet later, after the swap you wanted. The new path assumes the caller already pushed the assets in with a plain `transfer`, and the pool reads the surplus, `dx = balanceOf(self) - stored_balances[i]`. Both paths run through one helper, `_transfer_in`, which branches on a boolean.
+In traditional exchange smart-contract designs, the asset-flow transactions are always proceeded by an 'approval' transaction, where the owner of the assets gives permission to the smart contract to spend a certain limit of the user's funds for exchange-related operations. This is now an antiquated design, since superceeded by newer spending-approval approaches. The general risk that approvals carry are:
 
-Two reasons carry it:
+1. Users generally have a habit of giving smart contracts 'infinite approval', i.e. the authorisation to spend all of their assets (triggered by a user transaction).
+2. This leaves open cases where exploited/vulnerable smart contracts expose user funds to the danger of being stolen by hackers.
+3. This risk prevents accredited investor parties and regulated entities from safely interacting with the smart contract.
 
-1. Security. The funds a pool can touch shrink from anything ever approved down to whatever sits in the pool for this one call. That closes a whole class of approval-drain exploits, most of all for routers that hold approvals across dozens of pools. It sits on top of the existing `@nonreentrant('lock')` as a second layer.
-2. Gas. In a multi-hop route, each hop drops one redundant `transferFrom`, a cross-contract call carrying an allowance read and write. The optimistic branch adds only a `balanceOf` read and a subtraction.
+To counteract this issue, a secondary exchange entry point was introduced which did not require approval transactions at all. This secondary entrypoint utilised a novel approach where the smart contract would read 'excess' balances as amounts of the asset to be exchanged, instead of pulling pre-approved assets from the user's balances. The 'excess' balances would arise from the user 'optimistically transferring' funds to the smart contract and immediately calling the public exchange method within the same transaction.
 
-What an auditor broke: MixBytes found that `get_virtual_price()` could be manipulated by skimming directly-transferred assets (C-2, Critical), that a 1-wei transfer could grief a strict `dx == _dx` check (M-2, fixed by relaxing it to `assert _dx >= dx`), and that rebasing assets break the surplus diff (C-1, so `exchange_received` refuses pools holding them). All fixed.
+An added advantage of a 'transfer-then-exchange' flow is that it allowed for a GAS optimisation where an aggregator chaining multiple swaps could avoid redundant transfers where cross-contract transactions were involved: initially, an exchange involving markets A and B would require a complex transaction flow: user -> exchange contract -> market A -> exchange contract -> market B -> user. With this new approach the transaction flow becomes user -> exchange contract -> market A -> market B -> user. That one additional transfer is a significant optimisation as it involves removing memory updates, and distributed ledgers price memory updates the highest of all opcodes.
+
+So, the approach not only strengthened security for users, it also unveiled a hidden optimisation that made the AMM contracts more competitive in the open markets. And AMM contracts benefit heavily from hyper-optimised code.
 
 Source: [`CurveStableSwapNG.vy#L358`](https://github.com/curvefi/stableswap-ng/blob/2abe778f40206a6c0fd108a0a53ad3266cbedeee/contracts/main/CurveStableSwapNG.vy#L358).
 
