@@ -1,10 +1,8 @@
-This is a small, reproducible script that calculates total real value secured by the code snippets discussed in this repository.
-
-[`fetch-ng-tvl.sh`](./fetch-ng-tvl.sh) sums the total US-dollar value of assets deposited in the pools across all pools utilising the code discussed in this repository. The data is fetched via the public [Curve API](https://docs.curve.finance/protocol/api/curve-api). These are the Vyper 0.3.10-era pools whose core contracts the three changes in the [root README](../../README.md) describe: `exchange_received`, the WETH-only transfer path, and the internal `_claim_admin_fees`.
+A small, reproducible script that sums the real US-dollar value held by the pools whose core contracts the three changes describe. [`fetch-total-value.sh`](./fetch-total-value.sh) totals the deposits across those pools from the public [Curve API](https://docs.curve.finance/protocol/api/curve-api). These are the Vyper 0.3.10-era pools carrying `exchange_received`, the ERC20-asset-only transfer path, and the internal `_claim_admin_fees`, as described in the [root README](../../README.md).
 
 ```bash
 # needs: bash, curl, jq
-./fetch-ng-tvl.sh
+./fetch-total-value.sh
 ```
 
 ## Snapshot: 2026-06-19 (live)

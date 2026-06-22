@@ -1,21 +1,22 @@
 # =============================================================================
-# Internalizing admin-fee claims and removing the "gulp"
+# Internalizing admin-fee claims and removing the "gulp".
 #
-# OLD: a PUBLIC claim_admin_fees() re-synced tracked balances to the real ERC20
-#      balanceOf (the literal "# Gulp here" block) -> any tokens donated to the
-#      pool were silently swept in and counted as profit. A side effect that
-#      became a feature.
-# NEW: _claim_admin_fees() is @internal, auto-triggered, and derives fees ONLY
-#      from the xcp_profit invariant counters. balanceOf is never used to redefine
-#      balances, so donations are never monetized as profit.
+# OLD: a public claim_admin_fees() re-synced the tracked balances to the real
+#      ERC20 asset balanceOf (the "# Gulp here" block), so any asset donated to
+#      the pool was swept in and counted as profit. A side effect that became a
+#      feature.
+# NEW: _claim_admin_fees() is internal and auto-triggered, and derives fees only
+#      from the xcp_profit invariant counters. balanceOf never redefines the
+#      balances, so a donation is never counted as profit.
 #
-# Excerpt for discussion, not a full contract. See ../README.md -> change 3.
+# Excerpt for discussion, not a full contract. See ../README.md (change 3).
 # `# ...` marks elided lines.
 # =============================================================================
 
 
 # ======================== BEFORE: old tricrypto =============================
-# Source: curve-crypto-contract/contracts/tricrypto/CurveCryptoSwap.vy @ d7d04cd
+# _claim_admin_fees: https://github.com/curvefi/curve-crypto-contract/blob/d7d04cd9ae038970e40be850df99de8c1ff7241b/contracts/tricrypto/CurveCryptoSwap.vy#L397
+# claim_admin_fees:  https://github.com/curvefi/curve-crypto-contract/blob/d7d04cd9ae038970e40be850df99de8c1ff7241b/contracts/tricrypto/CurveCryptoSwap.vy#L965
 
 @internal
 def _claim_admin_fees():
@@ -25,8 +26,8 @@ def _claim_admin_fees():
     xcp_profit_a: uint256 = self.xcp_profit_a
 
     # Gulp here                              <-- THE PROBLEM: tracked balances are
-    _coins: address[N_COINS] = coins         #   overwritten with the real ERC20
-    for i in range(N_COINS):                 #   balance, so any donated tokens get
+    _coins: address[N_COINS] = coins         #   overwritten with the real ERC20 asset
+    for i in range(N_COINS):                 #   balance, so any donated asset gets
         self.balances[i] = ERC20(_coins[i]).balanceOf(self)  # absorbed into "profit".
 
     vprice: uint256 = self.virtual_price
@@ -59,9 +60,9 @@ def claim_admin_fees():
 
 
 # ========================== AFTER: tricrypto-ng ==============================
-# Source: tricrypto-ng/contracts/main/CurveTricryptoOptimized.vy @ ecaa816
-# @internal only (no public wrapper). Fees come from the xcp_profit accounting,
-# NOT from re-reading balanceOf. There is no balance "gulp".
+# Internal only (no public wrapper). Fees come from the xcp_profit accounting,
+# not from re-reading balanceOf. There is no balance "gulp".
+# _claim_admin_fees: https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy#L1099
 
 @internal
 def _claim_admin_fees():

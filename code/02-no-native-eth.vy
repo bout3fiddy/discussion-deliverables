@@ -1,41 +1,39 @@
 # =============================================================================
-# Removing native-ETH transfers: value now moves only through WETH / ERC20
+# Removing native-asset transfers: value now moves only through ERC20 assets.
 #
-# Native ETH moves value with a low-level CALL, which runs the recipient's
-# fallback/receive code -> an implicit external callback. That is the exact
-# surface the July-2023 Vyper reentrancy-lock bug was exploited through. The NG
-# pools delete native ETH entirely; value moves only through ERC20 transfers,
-# which never hand control to an arbitrary fallback.
+# A native-asset transfer uses a low-level CALL that runs the recipient's fallback,
+# handing execution context to an external caller. That callback is the exact
+# surface the July 2023 Vyper reentrancy-lock bug was exploited through. The NG
+# pools remove native-asset transfers entirely; value then moves only through
+# ERC20 asset transfers, which never call into an arbitrary fallback.
 #
-# Before/after are the SAME lineage in the tricrypto-ng repo:
-#   git shows CurveTricryptoOptimized.vy was created as a 99%-similar copy
-#   (C099) of CurveTricryptoOptimizedWETH.vy; PR #23 "remove_eth_transfers"
-#   (commit 0ad0764 "feat: no more weth; no more public claim_admin_fees",
-#   51 insertions / 172 deletions = -121 lines) stripped the native-ETH path.
+# CurveTricryptoOptimized.vy was created from CurveTricryptoOptimizedWETH.vy by
+# PR #23 ("remove_eth_transfers"), which stripped the native-asset path.
 #
-# Excerpt for discussion, not a full contract. See ../README.md -> change 2.
+# Excerpt for discussion, not a full contract. See ../README.md (change 2).
 # `# ...` marks elided lines.
 # =============================================================================
 
 
 # ========================= BEFORE: CurveTricryptoOptimizedWETH.vy ============
-# Source: tricrypto-ng/contracts/main/CurveTricryptoOptimizedWETH.vy @ ecaa816
-# (the audited June-2023 predecessor; ChainSecurity notes it "Handles native Ether")
+# The audited June 2023 predecessor.
+# __default__:   https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimizedWETH.vy#L307
+# _transfer_out: https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimizedWETH.vy#L380
 
-# 1) The pool had to be payable just to receive raw ETH:
+# 1) The pool had to be payable just to receive the raw native asset:
 @payable
 @external
 def __default__():
     pass
 
 
-# 2) Transferring out could push NATIVE ETH, which runs the receiver's code:
+# 2) Transferring out could push the NATIVE ASSET, which runs the receiver's code:
 @internal
 def _transfer_out(
     _coin: address, _amount: uint256, use_eth: bool, receiver: address
 ):
     if use_eth and _coin == WETH20:
-        raw_call(receiver, b"", value=_amount)  # <-- native send: hands control to
+        raw_call(receiver, b"", value=_amount)  # <-- native-asset send: hands control to
                                                 #     receiver's fallback mid-call
     else:
         if _coin == WETH20:
@@ -47,9 +45,10 @@ def _transfer_out(
 
 
 # ========================== AFTER: CurveTricryptoOptimized.vy =================
-# Source: tricrypto-ng/contracts/main/CurveTricryptoOptimized.vy @ ecaa816
-# No @payable, no __default__, no raw_call(value=...), no use_eth flag.
-# Value moves only via ERC20 (grep confirms: 0 occurrences of raw_call here).
+# No @payable, no __default__, no raw_call(value=...), no use_eth flag; value
+# moves only via ERC20 asset transfers (grep confirms 0 occurrences of raw_call).
+# _transfer_in:  https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy#L287
+# _transfer_out: https://github.com/curvefi/tricrypto-ng/blob/ecaa8161c240f21dd7c3712eefc5637e1dac742b/contracts/main/CurveTricryptoOptimized.vy#L339
 
 @internal
 def _transfer_in(
@@ -60,7 +59,7 @@ def _transfer_in(
 ) -> uint256:
     # ... (optimistic branch elided; see 01-optimistic-transfers.vy) ...
 
-    # ----------------------------------------------- ERC20 transferFrom flow.
+    # ERC20 asset transferFrom flow:
     # EXTERNAL CALL
     assert ERC20(coins[_coin_idx]).transferFrom(
         sender,
@@ -77,7 +76,7 @@ def _transfer_in(
 def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
     # Adjust balances before handling transfers:
     self.balances[_coin_idx] -= _amount
-    # EXTERNAL CALL  --  a plain ERC20 transfer; never calls back into the pool
+    # EXTERNAL CALL: a plain ERC20 asset transfer; never calls back into the pool
     assert ERC20(coins[_coin_idx]).transfer(
         receiver,
         _amount,

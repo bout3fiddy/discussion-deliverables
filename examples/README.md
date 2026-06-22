@@ -1,7 +1,9 @@
 # Examples
 
-Three small, runnable examples that demonstrate the ideas behind the changes and the lessons. The first two are Vyper contracts, and the third is a short benchmark.
+Three small, runnable examples. The first two are Vyper contracts, the third a short Python benchmark.
 
-1. [01-native-eth-reentrancy](./01-native-eth-reentrancy/) shows why native asset transfers plus a misconfigured reentrancy lock are drainable, and how moving value as an ERC20-standard asset removes the dependency on the lock being correct. Teaching version of change 2 in the [root README](../README.md#2-disallowing-handing-over-execution-context-to-external-callers).
-2. [02-erc20-approvals](./02-erc20-approvals/) shows why an ERC20-standard asset needs an approval for a transfer, and how the transfer-then-exchange pattern does the same exchange without one. Teaching version of change 1 in the [root README](../README.md#1-approval-free-swaps-via-optimistic-transfers-exchange_received).
-3. [03-branch-prediction](./03-branch-prediction/) shows the same loop running faster on sorted input, because the speed comes from the CPU's branch predictor. The hardware side of the core premise behind the [engineering lessons](../README.md#engineering-lessons) in the root README.
+1. [01-native-asset-reentrancy](./01-native-asset-reentrancy/): a pool that pays in the native asset is drained through a misconfigured lock, and the same pool paying an ERC20 asset is not.
+2. [02-erc20-asset-approvals](./02-erc20-asset-approvals/): why an ERC20 asset swap needs an approval, and how transferring first and swapping in the same transaction avoids one.
+3. [03-branch-prediction](./03-branch-prediction/): the same loop runs faster on sorted input, because the CPU's branch predictor guesses the branch almost perfectly on ordered data.
+
+The two Vyper examples share `mock_erc20_asset.vy` in this folder.

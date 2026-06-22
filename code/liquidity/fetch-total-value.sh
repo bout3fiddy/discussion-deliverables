@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# fetch-ng-tvl.sh: total liquidity (TVL) held by the Curve "NG" contracts.
+# fetch-total-value.sh: total liquidity (TVL) held by the Curve "NG" contracts.
 #
 # Sums on-chain TVL across the three NG factory registries (Stableswap-NG,
 # Tricrypto-NG, Twocrypto-NG) over every Curve network, using the public
@@ -11,8 +11,8 @@
 # rather than a static claim. Run it for a current snapshot.
 #
 # Requirements: bash, curl, jq.
-# Usage:        ./fetch-ng-tvl.sh            # prints per-registry + grand total
-#               OUTDIR=./snapshot ./fetch-ng-tvl.sh   # also keep raw JSON
+# Usage:        ./fetch-total-value.sh            # prints per-registry + grand total
+#               OUTDIR=./snapshot ./fetch-total-value.sh   # also keep raw JSON
 #
 # Notes on correctness (these matter and are easy to get wrong):
 #   * TVL basis is `data.tvlAll`, which the API computes as the sum of each

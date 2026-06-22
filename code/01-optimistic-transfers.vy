@@ -1,15 +1,16 @@
-# =============================================================================
-# Approval-free ("optimistic") swaps  -  Curve Stableswap-NG
+# Approval-free ("optimistic") swaps in Curve Stableswap-NG.
 #
-# Source : contracts/main/CurveStableSwapNG.vy
-# Repo   : github.com/curvefi/stableswap-ng  @ 2abe778
-# Lines  : exchange_received L534-565, _transfer_in L356-395
+# A swap entry point that needs no ERC20 asset approval: the caller sends the asset
+# to the pool, then calls exchange_received in the same transaction, and the pool
+# takes the surplus over its recorded balance as the amount swapped in.
 #
-# This is an EXCERPT for discussion, not a full contract. See ../README.md -> change 1.
-# =============================================================================
+# Excerpt for discussion, not a full contract. See ../README.md (change 1).
+# Source:
+#   exchange_received: https://github.com/curvefi/stableswap-ng/blob/2abe778f40206a6c0fd108a0a53ad3266cbedeee/contracts/main/CurveStableSwapNG.vy#L534-L565
+#   _transfer_in:      https://github.com/curvefi/stableswap-ng/blob/2abe778f40206a6c0fd108a0a53ad3266cbedeee/contracts/main/CurveStableSwapNG.vy#L356-L395
 
-# --- Public entry point: swap WITHOUT granting the pool an ERC20 approval ----
-# The caller transfers tokens straight to the pool, THEN calls this in the same tx.
+# Public entry point: a swap that needs no ERC20 asset approval. The caller sends
+# the asset to the pool, then calls this in the same transaction.
 @external
 @nonreentrant('lock')
 def exchange_received(
@@ -45,7 +46,7 @@ def exchange_received(
         True,  # <--------------------------------------- swap optimistically.
     )
 
-# --- The transfer-in logic that makes it possible -----------------------------
+# The transfer-in logic that makes it possible:
 
 @internal
 def _transfer_in(

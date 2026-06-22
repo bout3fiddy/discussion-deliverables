@@ -48,7 +48,7 @@ In traditional exchange smart-contract designs, asset-flow transactions are alwa
 
 To counteract this issue, a secondary exchange entry point was introduced which did not require approval transactions at all, while preserving legacy approaches that were more used to the older style. This secondary entrypoint utilised a novel approach where the smart contract would read 'excess' balances as amounts of the asset to be exchanged, instead of pulling pre-approved assets from the user's balances. The 'excess' balances would arise from the user 'optimistically transferring' funds to the smart contract and immediately calling the public exchange method within the same transaction.
 
-An added advantage of a 'transfer-then-exchange' flow is that it allowed for a GAS optimisation where an aggregator chaining multiple swaps could avoid redundant transfers where cross-contract transactions were involved: initially, an exchange involving markets A and B would require a complex transaction flow: user -> exchange contract -> market A -> exchange contract -> market B -> user. With this new approach the transaction flow becomes user -> exchange contract -> market A -> market B -> user. That one additional transfer is a significant optimisation as it involves removing storage writes, and distributed ledgers price storage writes very high (see [evm.codes](https://www.evm.codes/?fork=osaka#55) for a simulator for SSTORE costs).
+An added advantage of a 'transfer-then-exchange' flow is that it allowed for a GAS optimisation where an aggregator chaining multiple swaps could avoid redundant transfers where cross-contract transactions were involved: initially, an exchange involving markets A and B would require a complex transaction flow: user -> exchange contract -> market A -> exchange contract -> market B -> user. With this new approach the transaction flow becomes user -> exchange contract -> market A -> market B -> user. That one additional transfer is a significant optimisation as it involves removing storage writes, and distributed ledgers price storage writes very high (see [evm.codes](https://www.evm.codes/?fork=osaka#55) for a simulator of SSTORE costs).
 
 So, the approach not only strengthened security for users, it also unveiled a hidden optimisation that made the AMM contracts more competitive in the open markets. And AMM contracts benefit heavily from hyper-optimised code.
 
@@ -128,7 +128,7 @@ Based on this core premise, here are the lessons learnt:
 
 ## Numbers: Deposited funds post-hack and post security-first refactor
 
-A consequence of the exploit was an exodus of billions of dollars of liquidity from the exchange. A consequence of pursuing security resulted in the following liquidity staying. These are numbers fetched live from the public blockchain, from contracts that were deployed post-hack, using [`code/liquidity/fetch-ng-tvl.sh`](./code/liquidity/fetch-ng-tvl.sh):
+A consequence of the exploit was an exodus of billions of dollars of liquidity from the exchange. A consequence of pursuing security resulted in the following liquidity staying. These are numbers fetched live from the public blockchain, from contracts that were deployed post-hack, using [`code/liquidity/fetch-total-value.sh`](./code/liquidity/fetch-total-value.sh):
 
 | Contract Type | Total Value (USD) | # Active Liquidity Pools |
 |---|---:|---:|
