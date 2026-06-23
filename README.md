@@ -34,8 +34,8 @@ Following the hack, several post-hack endeavours were put into motion. Vyper wen
 
 1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy)), therefore reducing
    exposure to an exploited smart contract that has the authorisation to spend assets on behalf of the owner.
-2. Disallowing handing over execution context to external callers ([code](./code/02-no-native-eth.vy)).
-3. Removing unintentional 'happy accident' features ([code](./code/03-admin-fees-internal-and-no-gulp.vy)), therefore
+2. Disallowing handing over execution context to external callers ([code](./code/02-disallow-execution-handoff.vy)).
+3. Removing unintentional 'happy accident' features ([code](./code/03-prune-happy-accidents.vy)), therefore
    paving the way to approach it more seriously.
 
 ### 1. Approval-free swaps via optimistic transfers (`exchange_received`)

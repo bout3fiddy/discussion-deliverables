@@ -1,13 +1,19 @@
 # =============================================================================
-# Internalizing admin-fee claims and removing the "gulp".
+# Pruning an unintentional "happy accident" in admin-fee claims.
 #
-# OLD: a public claim_admin_fees() re-synced the tracked balances to the real
-#      ERC20 asset balanceOf (the "# Gulp here" block), so any asset donated to
-#      the pool was swept in and counted as profit. A side effect that became a
-#      feature.
-# NEW: _claim_admin_fees() is internal and auto-triggered, and derives fees only
-#      from the xcp_profit invariant counters. balanceOf never redefines the
-#      balances, so a donation is never counted as profit.
+# A donation to the pool counts as profit. A public claim_admin_fees() re-synced
+# the tracked balances to the real ERC20 asset balanceOf, so any asset sent to
+# the pool was swept into the recorded balances and booked as profit. Nothing
+# was designed to read donations this way.
+#
+# The pool spends profit to compress its bid-ask spread and rebalance liquidity
+# closer to where the market is trading, so booking a donation as profit let
+# anyone hand the pool value to tighten spreads on demand. That made the side
+# effect useful enough to be relied on as a feature.
+#
+# _claim_admin_fees() is now internal and auto-triggered, deriving fees only from
+# the xcp_profit invariant counters. balanceOf never redefines the balances, so
+# a donation is never counted as profit.
 #
 # Excerpt for discussion, not a full contract. See ../README.md (change 3).
 # `# ...` marks elided lines.
