@@ -1,6 +1,6 @@
 # Three security changes to Curve's core AMM contracts
 
-This is the story of the recovery efforts following a highly publicised blackhat incident. Three code snippets are chosen. This readme is a general storyline to set the scene.
+This is the story of the re-architecting efforts following a highly publicised blackhat incident. Three code snippets are chosen. This readme is a general storyline to set the scene.
 
 ## Primer on AMMs
 
