@@ -115,9 +115,9 @@ The three changes mentioned are a small part of a larger set of lessons learnt d
 
 The core, hard-earned lesson is this: the actual platform is the underlying hardware / virtual machine that runs the code produced by the compiler, and not the source code that is written by a programmer. The compiler can introduce unintuitive / unexpected artifacts, which are not visible in the source code, the hardware can run code in mysterious ways. A couple of examples:
 
-a. The July 2023 Vyper compiler vulnerability exploit is one example.
-b. A python [branch-prediction example](./examples/03-branch-prediction/) is another one that shows how the underlying hardware can run code in unintuitive ways, where simply sorting inputs leads to faster code.
-c. Apple M-series chips split their cores between performance and efficiency types, in ratios that vary by chip. These are specialised processors which handle different kinds of tasks: performance cores handle heavy parallel compute and consume more power, efficiency cores do simpler calculations and consume less power. Therefore a source code's performance increase by adding more workers is not linear, and drops sharply after exhausting performance threads. This is not visible in the compiler or the source code, and requires telemetry and some debugging to figure out what's actually happening.
+1. The July 2023 Vyper compiler vulnerability exploit is one example.
+3. A python [branch-prediction example](./examples/03-branch-prediction/) is another one that shows how the underlying hardware can run code in unintuitive ways, where simply sorting inputs leads to faster code.
+3. Apple M-series chips split their cores between performance and efficiency types, in ratios that vary by chip. These are specialised processors which handle different kinds of tasks: performance cores handle heavy parallel compute and consume more power, efficiency cores do simpler calculations and consume less power. Therefore a source code's performance increase by adding more workers is not linear, and drops sharply after exhausting performance threads. This is not visible in the compiler or the source code, and requires telemetry and some debugging to figure out what's actually happening.
 
 Based on this core premise, here are the lessons learnt:
 
