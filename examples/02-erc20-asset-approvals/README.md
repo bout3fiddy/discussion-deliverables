@@ -13,10 +13,10 @@ The two steps must happen in one transaction. Assets transferred without the fol
 uv run --with titanoboa demo.py
 ```
 
-The script prints each step and checks `transferFrom` reverting without an approval, `swap_received` completing with the allowance still zero, and surplus left by a missing follow-up call being claimable by anyone.
+The script prints each step and checks `transferFrom` reverting without an approval, and `swap_received` completing the same trade with the allowance still zero.
 
 ## Files
 
 - `swap_pool.vy` minimal two-asset pool with both `swap` and `swap_received`
 - `../mock_erc20_asset.vy` minimal ERC20 asset, shared with example 01
-- `demo.py` the three demonstrations above
+- `demo.py` the two demonstrations above

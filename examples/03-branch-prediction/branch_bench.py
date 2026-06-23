@@ -14,7 +14,7 @@ import time
 
 
 def calc_sum(values: list[int], repeat: int) -> int:
-    """Sum the values below 128 and those at or above it, scanning `values` `repeat` times.
+    """Sum values below 128 and those at or above it, scanning the list `repeat` times.
 
     The split `if` is the branch whose misprediction cost this benchmark measures.
     Scanning the list many times amplifies that cost above timer noise.
@@ -33,7 +33,7 @@ def calc_sum(values: list[int], repeat: int) -> int:
 
 
 def median_ms(values: list[int], repeat: int, trials: int) -> float:
-    """Return the median wall-clock time of calc_sum, in milliseconds, over `trials` runs."""
+    """Median wall-clock time of calc_sum in milliseconds, over `trials` runs."""
     calc_sum(values, repeat)  # warm up before timing
 
     times = []
@@ -52,9 +52,8 @@ def main():
     repeat = 200
     trials = 10
 
-    data = [random.randint(0, 255) for _ in range(n)]
-    unsorted = list(data)
-    ordered = sorted(data)
+    unsorted = [random.randint(0, 255) for _ in range(n)]
+    ordered = sorted(unsorted)
 
     slow = median_ms(unsorted, repeat, trials)
     fast = median_ms(ordered, repeat, trials)

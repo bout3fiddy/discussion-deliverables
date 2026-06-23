@@ -46,7 +46,7 @@ def main():
         registry, net = job
         return fetch(f"getPools/{net}/{registry}")
 
-    with ThreadPoolExecutor(max_workers=len(jobs)) as thread_pool:
+    with ThreadPoolExecutor(max_workers=min(len(jobs), 16)) as thread_pool:
         results = thread_pool.map(pool_data, jobs)
     payloads = [data for data in results if data]
 

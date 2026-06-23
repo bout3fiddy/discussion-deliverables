@@ -4,9 +4,9 @@ This is the story of the recovery efforts following a highly publicised blackhat
 
 ## Primer on AMMs
 
-Traditional exchanges run order books where buyers post bids, sellers post asks, and a matching engine pairs. Orderbooks are a data-intensive infrastructure that requires buyers and sellers to be present constantly re-quoting and reactive to the market, at an extremely high throughput (some participants require nanosecond level execution of their orders and the ability to cancel orders quickly). On a distributed ledger such as public blockchains, this is not possible. The ledger is distributed and every write to the global shared state is extremely expensive: every step costs measurable computational units called GAS. 
+Traditional exchanges run order books where buyers post bids, sellers post asks, and a matching engine pairs. Orderbooks are a data-intensive infrastructure that requires buyers and sellers to be present constantly re-quoting and reactive to the market, at an extremely high throughput (some participants require nanosecond level execution of their orders and the ability to cancel orders quickly). On a distributed ledger such as public blockchains, this is not possible. The ledger is distributed and every write to the global shared state is extremely expensive: every step costs measurable computational units called GAS.
 
-In such conditions, markets can be replaced by immutable programs (called smart contracts) that exist on the distributed ledger. These special classes of immutable smart contracts are called Automated Market Makers (AMMs), which replace an orderbook's matching engine with a suite of mathematical formulae that manage asset flow within the market, and an accompanying mathematical invariant that must hold true during an exchange of assets within the market. 
+In such conditions, markets can be replaced by immutable programs (called smart contracts) that exist on the distributed ledger. These special classes of immutable smart contracts are called Automated Market Makers (AMMs), which replace an orderbook's matching engine with a suite of mathematical formulae that manage asset flow within the market, and an accompanying mathematical invariant that must hold true during an exchange of assets within the market.
 
 The AMM smart contract holds a reserve of assets (henceforth called a liquidity pool) and prices each trade from how much of each asset the pool currently holds. That pricing function, governed by the invariant, is called a bonding curve. Liquidity providers deposit assets and receive shares they later redeem; traders swap against the pool, and the bonding curve prices each swap based on the local state of the smart contract.
 
@@ -16,8 +16,8 @@ In [July 2023 a bug in the Vyper compiler](https://hackmd.io/@vyperlang/HJUgNMhs
 
 The gist of the attack is as follows:
 
-1. Each mutex can assign its own key, and therefore decorating a function with a mutex and a shared key e.g. `@nonreentrant('shared_key_A')` would 'lock' re-entry for all functions that shared the same key. 
-2. The compiler bug gave each function its own separate lock even when they shared the same key, so functions that were meant to share one lock did not, therefore disabling cross-function mutex locks. 
+1. Each mutex can assign its own key, and therefore decorating a function with a mutex and a shared key e.g. `@nonreentrant('shared_key_A')` would 'lock' re-entry for all functions that shared the same key.
+2. The compiler bug gave each function its own separate lock even when they shared the same key, so functions that were meant to share one lock did not, therefore disabling cross-function mutex locks.
 3. Consequently, if the decorated functions had the possibility to hand over execution context to an external caller, the external caller would be able to re-enter in-between a transaction, and exploit a stale state (if there was profit to be made or DoS to be caused).
 
 No smart contract audit had looked at the compiler, and the compiler itself had not been scrutinised by external auditors (lack of funding, people, and therefore coordination). Beyond non-technical constraints, the leak also required all of the following conditions to be true:
@@ -26,13 +26,13 @@ No smart contract audit had looked at the compiler, and the compiler itself had 
 2. the smart contract handing over execution context to an external caller, and
 3. stale smart contract state existing before execution context is handed over to an external caller.
 
-Following the hack, several post-hack endeavours were put into motion. Vyper went from being not audited to being the most audited smart contract language, and I re-designed all Curve AMM smart contracts with lessons learnt from the incident. This code repository contains, of the many security-related changes introduced, three changes that remain relevant to this day.
+Following the hack, several post-hack endeavours were put into motion. Vyper went from having an unaudited compiler to one with multiple independent compiler audits, and I re-designed all Curve AMM smart contracts with lessons learnt from the incident. This code repository contains, of the many security-related changes introduced, three changes that remain relevant to this day.
 
 ---
 
 ## The three changes
 
-1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy)), therefore reducing 
+1. Approval-free swaps via `exchange_received` ([code](./code/01-optimistic-transfers.vy)), therefore reducing
    exposure to an exploited smart contract that has the authorisation to spend assets on behalf of the owner.
 2. Disallowing handing over execution context to external callers ([code](./code/02-no-native-eth.vy)).
 3. Removing unintentional 'happy accident' features ([code](./code/03-admin-fees-internal-and-no-gulp.vy)), therefore
@@ -60,7 +60,7 @@ Earlier designs allowed for handing over execution context to external callers f
 
 These special transactions always call the receiver contract's hidden fallback `__default__()` method as a callback after receiving the assets (a peculiar property of the EVM). Which means that if, in the middle of a transaction execution, the sender smart contract invokes a transfer to a malicious smart contract, and the sender smart contract has a vulnerability in the mutex lock, then the malicious receiver smart contract's `__default__()` method containing malicious payload could infiltrate/re-enter the sender smart contract in the middle of a transaction. If the sender smart contract's state was stale, e.g. the sender smart contract initiated a transfer before book-keeping the exchange, the malicious smart contract could re-enter the contract knowing that the sender has not registered the transfer yet, and therefore extract more assets than what it gives in (therefore: breaking the invariant of the exchange's mathematical functions).
 
-This was in fact the very same callback feature (a feature present in special kinds of blockchain implementation called the Ethereum Virtual Machine, or EVM), that the exploiters eventually utilised to steal assets from the exchange on July 2023. 
+This was in fact the very same callback feature (a feature present in special kinds of blockchain implementation called the Ethereum Virtual Machine, or EVM), that the exploiters eventually utilised to steal assets from the exchange on July 2023.
 
 The gist here is: every point where a contract hands execution to code it does not control is a re-entry opportunity, and increases the chances that one guard failure leads to catastrophic losses. Fewer/No handoffs reduce that attack vector, but also: implementing a new book-keeping approach where the local state is committed before an execution context handoff is initiated also ensures this exploit is not profitable even if the exploiter somehow finds a way to re-enter.
 
@@ -72,7 +72,7 @@ Source: [`CurveTricryptoOptimized.vy`](https://github.com/curvefi/tricrypto-ng/b
 
 Every exchange charges a fee, and the fee is harvested periodically. This approach to charge fees and harvest them can be designed in several ways. The older approach exposed the ability to do so publicly, allowing anyone to call the `claim_admin_fees()` method. The book-keeping set it out in a way such that any 'excess' assets that were not accounted for were effectively fees, therefore fees could be harvested by checking the actual asset balances (via calling `asset.balanceOf(market)`) against the accounted-for asset balances (via `self.balances[asset_index]`).
 
-The market also had a feature where it could dynamically compress the bid-ask spread if there were sufficient profits it could spend (you need to spend assets to move positions and compress spreads). This was the whole value-proposition of the market: effectively to build a positive feedback loop where more exchanges would result in more revenue, some of which would be spent to compress spreads, therefore making the market more lucrative for exchanges, leading to more revenue ... But the same feature + the exposed `claim_admin_fees()` also allowed for 'donating' profits externally and in-organically to compress spreads. So, we have a situation where the function `claim_admin_fees()` does more things than what it advertises. In fact, ironically the unintentional feature was used by both [the blackhat to steal funds](https://hackmd.io/@LlamaRisk/BJzSKHNjn?stext=16191%3A351%3A0%3A1782162480%3Ax3DJ-c) and by the whitehat  rescue funds during the July 2023 exploit. [See White-hat 2, bout3fiddy's role](https://addison.is/posts/curve-whitehat).
+The market also had a feature where it could dynamically compress the bid-ask spread if there were sufficient profits it could spend (you need to spend assets to move positions and compress spreads). This was the whole value-proposition of the market: effectively to build a positive feedback loop where more exchanges would result in more revenue, some of which would be spent to compress spreads, therefore making the market more lucrative for exchanges, leading to more revenue ... But the same feature + the exposed `claim_admin_fees()` also allowed for 'donating' profits externally and in-organically to compress spreads. So, we have a situation where the function `claim_admin_fees()` does more things than what it advertises. In fact, ironically the unintentional feature was used by both [the blackhat to steal funds](https://hackmd.io/@LlamaRisk/BJzSKHNjn?stext=16191%3A351%3A0%3A1782162480%3Ax3DJ-c) and by the whitehat to rescue funds during the July 2023 exploit. [See White-hat 2, bout3fiddy's role](https://addison.is/posts/curve-whitehat).
 
 It was clear that the function was overloaded and was doing too many things as a side-effect. External auditors had been flagging this feature-hotspot as potentially dangerous as it wasn't clear what side-effects were in the unknown-unknowns. After discussions, it was decided to strip the possibility of side-effect features entirely, and pursue it more seriously and deliberately after deep research.
 
@@ -86,7 +86,7 @@ The work done to make the donate-to-compress-spreads feature is an ongoing resea
 
 The core testing suite is based on stateful, property-based fuzzing using python's `hypothesis` library. A hypothesis `RuleBasedStateMachine` sequences random state-changing actions, and checks economic invariants at each step. [Example Stateful Tests](https://github.com/curvefi/twocrypto-ng/blob/5cbe558902402e8fcb331463089db65fc56c11f9/tests/stateful/stateful_base.py#L7). [Example Fuzzing](https://github.com/curvefi/twocrypto-ng/blob/5cbe558902402e8fcb331463089db65fc56c11f9/tests/fuzzing/test_exchange_fuzzing.py).
 
-Beyond property-based tests, differential tests were also employed against python implementations of the exchange mathematics versus the smart-contract implementation. [Example test for cube root implementation](https://github.com/curvefi/twocrypto-ng/blob/5cbe558902402e8fcb331463089db65fc56c11f9/tests/fuzzing/test_cbrt.py). 
+Beyond property-based tests, differential tests were also employed against python implementations of the exchange mathematics versus the smart-contract implementation. [Example test for cube root implementation](https://github.com/curvefi/twocrypto-ng/blob/5cbe558902402e8fcb331463089db65fc56c11f9/tests/fuzzing/test_cbrt.py).
 
 Finally: unit tests and integration tests.
 
@@ -98,7 +98,7 @@ Integrators and asset managers generally seek external reviewers they trust / re
 
 ### Documentation
 
-The technical docs at [docs.curve.finance](https://docs.curve.finance), starting out as a private repository and now available publicly on [Github](https://github.com/CurveDocs/curve-docs).
+The technical docs at [docs.curve.finance](https://docs.curve.finance), starting out as a private repository and now available publicly on [GitHub](https://github.com/CurveDocs/curve-docs).
 
 ### Beyond the code
 
@@ -111,18 +111,18 @@ Shipping critical infrastructure holding several hundred millions to billions of
 
 ## Engineering lessons
 
-The three changes mentioned are a small part of larger set of lessons learnt during the refactoring and rebuilding process, some of which are summarised below.
+The three changes mentioned are a small part of a larger set of lessons learnt during the refactoring and rebuilding process, some of which are summarised below.
 
 The core, hard-earned lesson is this: the actual platform is the underlying hardware / virtual machine that runs the code produced by the compiler, and not the source code that is written by a programmer. The compiler can introduce unintuitive / unexpected artifacts, which are not visible in the source code, the hardware can run code in mysterious ways. A couple of examples:
 
-a. The July 2023 Vyper compiler vulnerability exploit is one example. 
+a. The July 2023 Vyper compiler vulnerability exploit is one example.
 b. A python [branch-prediction example](./examples/03-branch-prediction/) is another one that shows how the underlying hardware can run code in unintuitive ways, where simply sorting inputs leads to faster code.
 c. Apple M-series chips split their cores between performance and efficiency types, in ratios that vary by chip. These are specialised processors which handle different kinds of tasks: performance cores handle heavy parallel compute and consume more power, efficiency cores do simpler calculations and consume less power. Therefore a source code's performance increase by adding more workers is not linear, and drops sharply after exhausting performance threads. This is not visible in the compiler or the source code, and requires telemetry and some debugging to figure out what's actually happening.
 
 Based on this core premise, here are the lessons learnt:
 
 1. Verify the compiled output.
-2. In mission critical software, treat unintentional features as bugs. 
+2. In mission critical software, treat unintentional features as bugs.
 3. A bug is a coordination failure. A post-hack analysis revealed that no single mistake caused the compiler bug. It was a mix of complacent users trusting compiler output, a complex smart contract language framework with a bus factor of 1 (due to lack of funding), and no processes involving audits.
 4. Listen and empathise to users, and find out their true needs. Quite a lot of work was done to reduce transaction costs, but the most important users cared the most about not giving approvals to smart contracts, less so on transaction costs: they'd only transact if there was a profit to be made (including cost of profit).
 

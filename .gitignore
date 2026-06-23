@@ -8,3 +8,7 @@ __pycache__/
 
 # Study Material
 docs/
+
+# linting
+.mypy_cache/
+.ruff_cache/

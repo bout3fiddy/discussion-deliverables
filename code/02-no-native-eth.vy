@@ -59,6 +59,9 @@ def _transfer_in(
 ) -> uint256:
     # ... (optimistic branch elided; see 01-optimistic-transfers.vy) ...
 
+    # snapshot the reserve BEFORE the transfer, to measure what actually arrives
+    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self)
+
     # ERC20 asset transferFrom flow:
     # EXTERNAL CALL
     assert ERC20(coins[_coin_idx]).transferFrom(

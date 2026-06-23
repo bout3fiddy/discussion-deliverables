@@ -1,7 +1,7 @@
 """Run from this directory:  uv run --with titanoboa demo.py
 
 Shows that an ERC20 asset swap needs an approval, and that the send-then-call
-pattern (swap_received) does the same trade with no approval at all.
+pattern (swap_received) does the same transaction with no approval at all.
 """
 
 import os

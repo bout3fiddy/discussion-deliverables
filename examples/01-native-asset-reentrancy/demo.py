@@ -72,7 +72,7 @@ def native_asset_pool_is_drained():
         f"but owes the depositor {owed // UNIT}: insolvent"
     )
 
-    assert reentered is True
+    assert reentered
     assert drained == 2 * UNIT and pool_left == 4 * UNIT
     print("  -> drained, as expected\n")
 
@@ -110,7 +110,7 @@ def erc20_asset_pool_is_safe():
         f"pool holds {pool_held // UNIT} units: solvent"
     )
 
-    assert reentered is False
+    assert not reentered
     assert attacker_held == 1 * UNIT and pool_held == 5 * UNIT
     print("  -> safe, as expected\n")
 
